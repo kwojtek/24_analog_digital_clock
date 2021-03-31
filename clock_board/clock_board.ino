@@ -73,9 +73,6 @@ void setup() {
   randomSeed(analogRead(0));
   setup_timers();
 
-  PCICR = (1<<PCIE1);
-  PCMSK1 = (1<<PCINT8) | (1<<PCINT11);
-
   sei();
   pinMode(A0,INPUT);
   pinMode(A3,INPUT);
