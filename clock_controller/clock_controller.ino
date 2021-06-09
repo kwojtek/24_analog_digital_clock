@@ -31,22 +31,44 @@ static RTCDateTime dt;
 byte clock_address[4][3][2] = {
   { {21, 22},
     {11, 12},
-    {01, 02}
+    {1, 2}
   },
 
   { {23, 24},
     {13, 14},
-    {03, 04}
+    {3, 4}
   },
 
   { {25, 26},
     {15, 16},
-    {05, 06}
+    {5, 6}
   },
 
   { {27, 28},
     {17, 18},
-    {07, 8}
+    {7, 8}
+  }
+};
+
+int offsets[4][3][2] = {
+  { {0, 0},
+    {0, 0},
+    {0, 5399}
+  },
+
+  { {0, 0},
+    {0, 0},
+    {0, 0}
+  },
+
+  { {0, 0},
+    {0, 0},
+    {0, 0}
+  },
+
+  { {0, 0},
+    {0, 0},
+    {0, 0}
   }
 };
 
@@ -61,31 +83,64 @@ void send_positions() {
       sendstop[1] = set_positions[xpos][ypos][1];
       dirs[0] = set_directions[xpos][ypos][0];
       dirs[1] = set_directions[xpos][ypos][1];
-      
-        Wire.beginTransmission(clock_address[xpos / 2][ypos][xpos % 2]);
-        for (i = 0; i < sizeof(sendstop); i++) {
-          byte *p = (byte *)sendstop + i;
-          Wire.write(*p);
-        }
-        for (i = 0; i < sizeof(dirs); i++) {
-          byte *p = (byte *)dirs + i;
-          Wire.write(*p);
-        }
-        unsigned int q = set_speeds[xpos][ypos];
-        for (i = 0; i < sizeof(q); i++) {
-          byte *p = (byte *)&q + i;
-          Wire.write(*p);
-        }
-        Wire.endTransmission();
+      int offset;
+      offset = offsets[xpos / 2][ypos][xpos % 2];
+      sendstop[0]=(sendstop[0]+offset)%10800;
+      sendstop[1]=(sendstop[1]+offset)%10800;
+        
+      Wire.beginTransmission(clock_address[xpos / 2][ypos][xpos % 2]);
+      for (i = 0; i < sizeof(sendstop); i++) {
+        byte *p = (byte *)sendstop + i;
+        Wire.write(*p);
+      }
+      for (i = 0; i < sizeof(dirs); i++) {
+        byte *p = (byte *)dirs + i;
+        Wire.write(*p);
+      }
+      unsigned int q = set_speeds[xpos][ypos];
+      for (i = 0; i < sizeof(q); i++) {
+        byte *p = (byte *)&q + i;
+        Wire.write(*p);
+      }
+      Wire.endTransmission();
     }
   }
 }
+
+void show_temp(int spd) {
+  byte temp = clock.readTemperature();
+  byte digital[4] = {0, 0, 0, 0};
+  byte digit;
+  byte ypos;
+  byte xpos;
+  
+  digital[0] = temp / 10;
+  digital[1] = temp % 10;
+  digital[2] = 'o';
+  digital[3] = 'C';
+
+  for (digit = 0; digit < 4; digit++) {
+    for (ypos = 0; ypos < 3; ypos++) {
+      for (xpos = 0; xpos < 2; xpos++) {
+        int i;
+        int j;
+        getdigit(digital[digit], 2 - ypos, xpos, &set_positions[digit*2+xpos][ypos][0], &set_positions[digit*2+xpos][ypos][1]);
+        set_speeds[digit*2+xpos][ypos]=spd;
+
+        set_directions[xpos][ypos][0] = random(0,2)==0?1:2;
+        set_directions[xpos][ypos][1] = random(0,2)==0?1:2;
+
+      }
+    }
+  }
+  send_positions();
+}
+
 void show_time_speed(int spd) {
   byte digital[4] = {0, 0, 0, 0};
   byte digit;
   byte ypos;
   byte xpos;
-  int backup;
 
   dt = clock.getDateTime();
   digital[2] = dt.minute / 10;
@@ -114,8 +169,17 @@ void show_time_speed(int spd) {
 void setup() {
   Wire.begin();
 }
+int temp_delay=20;
 
 void loop() {
   // put your main code here, to run repeatedly:
+  show_time_speed(900);
 
+  temp_delay--;
+  if (temp_delay==0) {
+    temp_delay=20;
+    show_temp(900);
+    _delay_ms(15000);
+  }  
+  _delay_ms(1000);
 }
