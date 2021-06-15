@@ -110,6 +110,7 @@ void send_positions() {
 }
 void wait_for_positions(int timeout) {
   unsigned int positions[2] = {0, 0};
+  unsigned int position_sent[2] = {0, 0};
   int towait=timeout*100;
   byte *d;
   int xpos, ypos;
@@ -127,9 +128,17 @@ void wait_for_positions(int timeout) {
     }
 
     int m = 0;
+    int offset = 0;
+ 
     for (xpos = 0; xpos < 8; xpos++) {
       for (ypos = 0; ypos < 3; ypos++) {
-        if (get_positions[xpos][ypos][0] != set_positions[xpos][ypos][0] || get_positions[xpos][ypos][1] != set_positions[xpos][ypos][1]) {
+        offset = offsets[xpos / 2][ypos][xpos % 2];
+        position_sent[0] = set_positions[xpos][ypos][0];
+        position_sent[1] = set_positions[xpos][ypos][1];
+        offset = offsets[xpos / 2][ypos][xpos % 2];
+        position_sent[0]=(position_sent[0]+offset)%10800;
+        position_sent[1]=(position_sent[1]+offset)%10800;
+        if (get_positions[xpos][ypos][0] != position_sent[0] || get_positions[xpos][ypos][1] != position_sent[1]) {
           m++;
           break;
         }
