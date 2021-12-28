@@ -17,18 +17,23 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifndef _delay_ms
+#define _delay_ms delay
+#endif
+
 #include "DS3231.h"
 #include <Wire.h>
 #include "font.h"
 
-static DS3231 clock;
-int set_positions[8][3][2];
+
+static DS3231 clockds;
+unsigned int set_positions[8][3][2];
 byte set_directions[8][3][2];
 int get_positions[8][3][2];
 unsigned int set_speeds[8][3];
 static RTCDateTime dt;
 
-const int stoppositions[5]={0, 2699,5399, 8099, 94491349};
+const int stoppositions[5]={0, 2699,5399, 8099, 9449/*1349*/};
 
 byte clock_address[4][3][2] = {
   { {21, 22},
@@ -73,6 +78,35 @@ int offsets[4][3][2] = {
     {0, 0}
   }
 };
+
+
+#ifndef __AVR__
+#include <NTPClient.h>
+#include <ESP8266WiFi.h>
+#include <WiFiUdp.h>
+
+const char *ssid     = "xxxx";
+const char *password = "xxxxxx";
+
+void initWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.hostname("clock");
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi ..");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print('.');
+    delay(1000);
+  }
+  Serial.println(WiFi.localIP());
+  
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(true);
+}
+#else
+void initWiFi() {
+}
+}
+#endif
 
 void send_positions() {
   unsigned int sendstop[2] = {0, 0};
@@ -138,7 +172,7 @@ void wait_for_positions(int timeout) {
         offset = offsets[xpos / 2][ypos][xpos % 2];
         position_sent[0]=(position_sent[0]+offset)%10800;
         position_sent[1]=(position_sent[1]+offset)%10800;
-        if (get_positions[xpos][ypos][0] != position_sent[0] || get_positions[xpos][ypos][1] != position_sent[1]) {
+        if (get_positions[xpos][ypos][0] != position_sent[0] || get_positions[xpos][ypos][1] != set_positions[xpos][ypos][1]) {
           m++;
           break;
         }
@@ -153,7 +187,7 @@ void wait_for_positions(int timeout) {
 }
 
 void show_temp(int spd) {
-  byte temp = clock.readTemperature();
+  byte temp = clockds.readTemperature();
   byte digital[4] = {0, 0, 0, 0};
   byte digit;
   byte ypos;
@@ -406,7 +440,7 @@ void do_trick_6() {
 
   byte digital[4] = {0, 0, 0, 0};
 
-  dt = clock.getDateTime();
+  dt = clockds.getDateTime();
   digital[2] = dt.minute / 10;
   digital[3] = dt.minute % 10;
   digital[0] = dt.hour / 10;
@@ -455,7 +489,7 @@ void show_time_speed(int spd) {
   byte ypos;
   byte xpos;
 
-  dt = clock.getDateTime();
+  dt = clockds.getDateTime();
   digital[2] = dt.minute / 10;
   digital[3] = dt.minute % 10;
   digital[0] = dt.hour / 10;
@@ -484,6 +518,9 @@ void show_time_speed(int spd) {
 
 void setup() {
   Wire.begin();
+  Serial.begin(9600);
+  initWiFi();
+  
 }
 int temp_delay=20;
 int trickcount=100;
