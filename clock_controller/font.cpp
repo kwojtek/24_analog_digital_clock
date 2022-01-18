@@ -20,8 +20,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "Arduino.h"
 #include "font.h"
 
-const int stoppositions[5]={0, 2699,5399, 8099, 9449/*1349*/};
-
+const int16_t stoppositions[5]={0, 2699,5399, 8099, 9449 /*1349*/};
+//const int16_t stoppositions[5]={0,34560, 23040,11520 ,5760};
 
 void getdigitx(byte num, byte tt1, byte tt2, byte *t1, byte *t2) {
   if (num==0) {
@@ -454,7 +454,7 @@ void getdigitx(byte num, byte tt1, byte tt2, byte *t1, byte *t2) {
   
 }
 
-void getdigit(byte num, byte tt1, byte tt2, unsigned int *p1, unsigned int *p2) {
+void getdigit(byte num, byte tt1, byte tt2, uint16_t *p1, uint16_t *p2) {
   byte t1;
   byte t2;
   getdigitx(num,tt1,tt2,&t1,&t2);

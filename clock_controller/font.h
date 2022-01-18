@@ -18,7 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #ifndef FONTH
 #define FONTH
-
-void getdigit(byte num, byte tt1, byte tt2, unsigned int *p1, unsigned int *p2);
+extern const int16_t stoppositions[5];
+void getdigit(byte num, byte tt1, byte tt2, uint16_t *p1, uint16_t *p2);
 
 #endif

@@ -21,72 +21,57 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define _delay_ms delay
 #endif
 
-#include "DS3231.h"
 #include <Wire.h>
+#include <RtcDS3231.h>
+
+RtcDS3231<TwoWire> rtcObject(Wire);
+
 #include "font.h"
+#include "config.h"
+
+void do_trick_1();
+void do_trick_2();
+void do_trick_3();
+void do_trick_4();
+void do_trick_5();
+void show_temp(int16_t spd); 
 
 
-static DS3231 clockds;
-unsigned int set_positions[8][3][2];
+uint16_t set_positions[8][3][2];
 byte set_directions[8][3][2];
-int get_positions[8][3][2];
-unsigned int set_speeds[8][3];
-static RTCDateTime dt;
+int16_t get_positions[8][3][2];
+uint16_t set_speeds[8][3];
 
-const int stoppositions[5]={0, 2699,5399, 8099, 9449/*1349*/};
 
-byte clock_address[4][3][2] = {
-  { {21, 22},
-    {11, 12},
-    {1, 2}
-  },
 
-  { {23, 24},
-    {13, 14},
-    {3, 4}
-  },
-
-  { {25, 26},
-    {15, 16},
-    {5, 6}
-  },
-
-  { {27, 28},
-    {17, 18},
-    {7, 8}
-  }
-};
-
-int offsets[4][3][2] = {
-  { {0, 0},
-    {0, 0},
-    {0, 5399}
-  },
-
-  { {0, 0},
-    {0, 0},
-    {0, 0}
-  },
-
-  { {0, 0},
-    {0, 0},
-    {0, 0}
-  },
-
-  { {0, 0},
-    {0, 0},
-    {0, 0}
-  }
-};
-
+uint32_t previousMillis = 0;  
+uint16_t interval = 1000; 
 
 #ifndef __AVR__
 #include <NTPClient.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+#include <ESP8266WebServer.h>
 
-const char *ssid     = "xxxx";
-const char *password = "xxxxxx";
+ESP8266WebServer server;
+
+const long utcOffsetInSeconds = 3600;
+
+
+void synchronizeClock() {
+   WiFiUDP ntpUDP;
+   NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
+   timeClient.begin();
+   delay(500);
+   timeClient.update();
+   RtcDateTime currentTime = rtcObject.GetDateTime();
+   RtcDateTime newTime = RtcDateTime(currentTime.Year(), currentTime.Month(), currentTime.Day(), 
+     timeClient.getHours(), timeClient.getMinutes(), timeClient.getSeconds()); 
+   rtcObject.SetDateTime(newTime);   
+}
 
 void initWiFi() {
   WiFi.mode(WIFI_STA);
@@ -101,25 +86,80 @@ void initWiFi() {
   
   WiFi.setAutoReconnect(true);
   WiFi.persistent(true);
+
+  server.on("/",[](){server.send(200,"text/plain","Hello on the clock\n");});
+  server.on("/trick1", [](){
+     server.send(200, "text/plain", "start_trick_1\n");
+     do_trick_2();
+  }); 
+  server.on("/trick2", [](){
+     server.send(200, "text/plain", "start_trick_2\n");
+     do_trick_2();
+  });
+  server.on("/synchro", [](){
+     server.send(200, "text/plain", "synchro\n");
+     synchronizeClock();
+  });   
+  server.on("/temp", [](){
+     server.send(200, "text/plain", "temp\n");
+     show_temp(900);
+     interval=25000;
+  });   
+  
+  server.begin(); 
+
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else { // U_FS
+      type = "filesystem";
+    }
+
+    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+    Serial.println("Start updating " + type);
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
+  ArduinoOTA.begin();
+  
 }
 #else
 void initWiFi() {
 }
-}
+
 #endif
 
 void send_positions() {
-  unsigned int sendstop[2] = {0, 0};
+  uint16_t sendstop[2] = {0, 0};
   byte dirs[2] = {0, 0};
-  int xpos, ypos;
-  int i;
+  int16_t xpos, ypos;
+  int16_t i;
   for (xpos = 0; xpos < 8; xpos++) {
     for (ypos = 0; ypos < 3; ypos++) {
       sendstop[0] = set_positions[xpos][ypos][0];
       sendstop[1] = set_positions[xpos][ypos][1];
       dirs[0] = set_directions[xpos][ypos][0];
       dirs[1] = set_directions[xpos][ypos][1];
-      int offset;
+      int16_t offset;
       offset = offsets[xpos / 2][ypos][xpos % 2];
       sendstop[0]=(sendstop[0]+offset)%10800;
       sendstop[1]=(sendstop[1]+offset)%10800;
@@ -132,7 +172,7 @@ void send_positions() {
       for (i = 0; i < sizeof(dirs); i++) {
         byte *p = (byte *)dirs + i;
         Wire.write(*p);
-      }
+      }    
       unsigned int q = set_speeds[xpos][ypos];
       for (i = 0; i < sizeof(q); i++) {
         byte *p = (byte *)&q + i;
@@ -142,12 +182,15 @@ void send_positions() {
     }
   }
 }
-void wait_for_positions(int timeout) {
-  unsigned int positions[2] = {0, 0};
-  unsigned int position_sent[2] = {0, 0};
-  int towait=timeout*100;
+void wait_for_positions(int16_t timeout) {
+  _delay_ms(timeout*10); //WKG
+  return;
+  
+  uint16_t positions[2] = {0, 0};
+  uint16_t position_sent[2] = {0, 0};
+  int16_t towait=timeout*100;
   byte *d;
-  int xpos, ypos;
+  int16_t xpos, ypos;
   while (1) {
     for (xpos = 0; xpos < 8; xpos++) {
       for (ypos = 0; ypos < 3; ypos++) {
@@ -156,13 +199,19 @@ void wait_for_positions(int timeout) {
         while (Wire.available()) {
           *(d++) = Wire.read();
         }
+        Serial.print("position (");
+        Serial.print(clock_address[xpos / 2][ypos][xpos % 2]);
+        Serial.print("): ");
+        Serial.print(positions[0]);
+        Serial.print(",");
+        Serial.println(positions[1]);
         get_positions[xpos][ypos][0] = positions[0];
         get_positions[xpos][ypos][1] = positions[1];       
       }
     }
 
-    int m = 0;
-    int offset = 0;
+    int16_t m = 0;
+    int16_t offset = 0;
  
     for (xpos = 0; xpos < 8; xpos++) {
       for (ypos = 0; ypos < 3; ypos++) {
@@ -186,13 +235,15 @@ void wait_for_positions(int timeout) {
   }
 }
 
-void show_temp(int spd) {
-  byte temp = clockds.readTemperature();
+
+void show_temp(int16_t spd) {
   byte digital[4] = {0, 0, 0, 0};
   byte digit;
   byte ypos;
   byte xpos;
-  
+
+  RtcTemperature tempObj = rtcObject.GetTemperature();
+  byte temp = (byte)tempObj.AsFloatDegC();
   digital[0] = temp / 10;
   digital[1] = temp % 10;
   digital[2] = 'o';
@@ -201,8 +252,8 @@ void show_temp(int spd) {
   for (digit = 0; digit < 4; digit++) {
     for (ypos = 0; ypos < 3; ypos++) {
       for (xpos = 0; xpos < 2; xpos++) {
-        int i;
-        int j;
+        int16_t i;
+        int16_t j;
         getdigit(digital[digit], 2 - ypos, xpos, &set_positions[digit*2+xpos][ypos][0], &set_positions[digit*2+xpos][ypos][1]);
         set_speeds[digit*2+xpos][ypos]=spd;
 
@@ -215,8 +266,9 @@ void show_temp(int spd) {
   send_positions();
 }
 
+
 void do_trick_1() {
-  int x, y, i ;
+  int16_t x, y, i ;
   for (x = 0; x < 8; x++) {
     set_speeds[x][0] = set_speeds[x][1] = set_speeds[x][2] = 900;
     set_positions[x][0][0] = stoppositions[3]; set_positions[x][0][1] = stoppositions[1];
@@ -224,7 +276,7 @@ void do_trick_1() {
     set_positions[x][1][0] = stoppositions[3]; set_positions[x][1][1] = stoppositions[1];
   }
   send_positions(); wait_for_positions(50);
-  int a = 10;
+  int16_t a = 10;
   for (i = 0; i < 10; i++) {
     for (x = 0; x < 8; x++) {
       if (x % 2) {
@@ -266,7 +318,7 @@ void do_trick_1() {
   _delay_ms(2000);
 }
 void do_trick_2() {
-  int x, y, i;
+  int16_t x, y, i;
   for (x = 0; x < 8; x++) {
     set_speeds[x][0] = set_speeds[x][1] = set_speeds[x][2] = 900;
   }
@@ -312,7 +364,7 @@ void do_trick_2() {
 
 }
 void do_trick_3() {
-  int x, y, i ;
+  int16_t x, y, i ;
   for (x = 0; x < 8; x++) {
     set_speeds[x][0] = set_speeds[x][1] = set_speeds[x][2] = 900;
     set_positions[x][0][0] = stoppositions[3]; set_positions[x][0][1] = stoppositions[1];
@@ -339,7 +391,7 @@ void do_trick_3() {
   send_positions();
 }
 void do_trick_4() {
-  int x, y, i ;
+  int16_t x, y, i ;
   for (y = 0; y < 3; y++) {
     set_speeds[0][y] = set_speeds[1][y] = set_speeds[2][y] = set_speeds[3][y] = 900;
     set_speeds[4][y] = set_speeds[5][y] = set_speeds[6][y] = set_speeds[7][y] = 900;
@@ -371,9 +423,9 @@ void do_trick_4() {
 
 }
 void do_trick_5() {
-  int x, y, i ;
-  const int sp[8]={0, 1349, 2699,4049, 5399, 6749, 8099, 9449};
-  int spx[8][2];
+  int16_t x, y, i ;
+  const int16_t sp[8]={0, 1349, 2699,4049, 5399, 6749, 8099, 9449};
+  int16_t spx[8][2];
   
   for (y = 0; y < 3; y++) {
     set_speeds[0][y] = set_speeds[1][y] = set_speeds[2][y] = set_speeds[3][y] = 900;
@@ -426,7 +478,7 @@ void do_trick_5() {
 }
 
 void do_trick_6() {
-  int x, y, i, j,digit;
+  int16_t x, y, i, j,digit;
   
   for (i = 0; i < 2; i++) {
     for (x = 0; x < 8; x++) {
@@ -440,17 +492,20 @@ void do_trick_6() {
 
   byte digital[4] = {0, 0, 0, 0};
 
+  /*
   dt = clockds.getDateTime();
-  digital[2] = dt.minute / 10;
-  digital[3] = dt.minute % 10;
-  digital[0] = dt.hour / 10;
-  digital[1] = dt.hour % 10;
+  */
+  
+  //digital[2] = dt.minute / 10;
+  //digital[3] = dt.minute % 10;
+  //digital[0] = dt.hour / 10;
+  //digital[1] = dt.hour % 10;
 
   for (digit = 0; digit < 4; digit++) {
     for (y = 0; y < 3; y++) {
       for (x = 0; x < 2; x++) {
-        int i;
-        int j;
+        int16_t i;
+        int16_t j;
         getdigit(digital[digit], 2 - y, x, &set_positions[digit*2+x][y][0], &set_positions[digit*2+x][y][1]);
         set_speeds[digit*2+x][y]=800;  
       }
@@ -482,29 +537,46 @@ void do_trick_6() {
   
 }
 
+uint32_t previousMillisHandsRandom = 0;
 
-void show_time_speed(int spd) {
+void show_time_speed(int16_t spd) {
   byte digital[4] = {0, 0, 0, 0};
   byte digit;
   byte ypos;
   byte xpos;
+  byte doRandom=0;
+  Serial.println("show time start");
 
-  dt = clockds.getDateTime();
-  digital[2] = dt.minute / 10;
-  digital[3] = dt.minute % 10;
-  digital[0] = dt.hour / 10;
-  digital[1] = dt.hour % 10;
+  RtcDateTime currentTime = rtcObject.GetDateTime(); 
+  
+
+  digital[2] = currentTime.Minute() / 10;
+  digital[3] = currentTime.Minute() % 10;
+  digital[0] = currentTime.Hour() / 10;
+  digital[1] = currentTime.Hour() % 10;
+  Serial.print(digital[0]);
+  Serial.print(digital[1]);
+  Serial.print(digital[2]);
+  Serial.println(digital[3]);
+  
+  uint32_t currentMillis = millis();
+  if (currentMillis - previousMillisHandsRandom >= 20000) {
+      previousMillisHandsRandom = currentMillis;  
+      doRandom=1;   
+  } 
 
   for (digit = 0; digit < 4; digit++) {
     for (ypos = 0; ypos < 3; ypos++) {
       for (xpos = 0; xpos < 2; xpos++) {
-        int i;
-        int j;
+        int16_t i;
+        int16_t j;
         getdigit(digital[digit], 2 - ypos, xpos, &set_positions[digit*2+xpos][ypos][0], &set_positions[digit*2+xpos][ypos][1]);
         set_speeds[digit*2+xpos][ypos]=spd;
-        
-        set_directions[xpos][ypos][0] = random(0,2)==0?1:2;
-        set_directions[xpos][ypos][1] = random(0,2)==0?1:2;
+
+        if (doRandom) {
+          set_directions[xpos][ypos][0] = random(0,2)==0?1:2;
+          set_directions[xpos][ypos][1] = random(0,2)==0?1:2;
+        }
         
       }
     }
@@ -518,46 +590,60 @@ void show_time_speed(int spd) {
 
 void setup() {
   Wire.begin();
+  Wire.setClock(10000L);
+  //rtcObject.Begin(); 
   Serial.begin(9600);
   initWiFi();
   
 }
-int temp_delay=20;
-int trickcount=100;
+int16_t temp_delay=20;
+int16_t trickcount=100;
 
 void loop() {
+#ifndef __AVR__
+  ArduinoOTA.handle();
+  server.handleClient();
+#endif
+
   // put your main code here, to run repeatedly:
-  show_time_speed(900);
-
-  temp_delay--;
-  if (temp_delay==0) {
-    temp_delay=20;
-    show_temp(900);
-    _delay_ms(15000);
-  }  
-  _delay_ms(1000);
-
-  if (--trickcount == 0) {
-    trickcount = 200 + random(0, 50);
-    switch (random(0, 6)) {
-      case 0:
-        do_trick_1();
-        break;
-      case 1:
-        do_trick_2();
-        break;
-      case 2:
-        do_trick_3();
-        break;
-      case 3:
-        do_trick_4();
-        break;
-      case 4:
-        do_trick_5();
-        break;
-      case 5:
-        do_trick_6();
-        break;
+  uint32_t currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+     previousMillis = currentMillis;
+     show_time_speed(900);
+     interval=1000;
+  
+  
+ 
+     temp_delay--;
+     if (temp_delay==0) {
+       temp_delay=160;
+       show_temp(900);
+       interval=20000;
+     }  
+     
+  
+    if (--trickcount == 0) {
+      trickcount = 600 + random(0, 250);
+      switch (random(0, 6)) {
+        case 0:
+          do_trick_1();
+          break;
+        case 1:
+          do_trick_2();
+          break;
+        case 2:
+          do_trick_3();
+          break;
+        case 3:
+          do_trick_4();
+          break;
+        case 4:
+          do_trick_5();
+          break;
+        case 5:
+          do_trick_6();
+          break;
+      }
     }
   }
 }
