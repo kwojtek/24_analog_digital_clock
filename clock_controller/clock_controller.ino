@@ -173,7 +173,7 @@ void send_positions() {
         byte *p = (byte *)dirs + i;
         Wire.write(*p);
       }    
-      unsigned int16_t q = set_speeds[xpos][ypos];
+      uint16_t q = set_speeds[xpos][ypos];
       for (i = 0; i < sizeof(q); i++) {
         byte *p = (byte *)&q + i;
         Wire.write(*p);
