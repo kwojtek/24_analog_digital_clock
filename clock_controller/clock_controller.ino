@@ -61,15 +61,59 @@ ESP8266WebServer server;
 const long utcOffsetInSeconds = 3600;
 
 
+int getlast3(int year) {
+  int y, m, d;
+  int days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  days[1] -= (y % 4) || (!(y % 100) && (y % 400));
+  for(m = 1; m <= 12; ++m){
+    d = days[m - 1];
+    y = year;
+    int day = days[m-1] - ((d += m < 3 ? y-- : y - 2, 23*m/9 + d + 4 + y/4- y/100 + y/400)%7);
+    if (m==3) {
+       return day;
+    }
+  }
+  return 0;
+}
+int getlast10(int year) {
+  int y, m, d;
+  int days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  days[1] -= (y % 4) || (!(y % 100) && (y % 400));
+  for(m = 1; m <= 12; ++m){
+    d = days[m - 1];
+    y = year;
+    int day = days[m-1] - ((d += m < 3 ? y-- : y - 2, 23*m/9 + d + 4 + y/4- y/100 + y/400)%7);
+    if (m==10) {
+       return day;
+    }
+  }
+  return 0;
+}
+int checkSummerTime(int year, int month, int day, int hour) {
+  if (month>10) return 0;
+  if (month==10 && day>getlast10(year)) return 0;
+  if (month==10 && day==getlast10(year) && hour>=2) return 0;
+  if (month<3) return 0;
+  if (month==3 && day<getlast3(year)) return 0;
+  if (month==3 && day==getlast3(year) && hour<=2) return 0;
+  return 1;
+}
+
 void synchronizeClock() {
    WiFiUDP ntpUDP;
-   NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
+   NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", utcOffsetInSeconds);
    timeClient.begin();
    delay(500);
    timeClient.update();
    RtcDateTime currentTime = rtcObject.GetDateTime();
+   
+   time_t epochTime = timeClient.getEpochTime();
+   struct tm *ptm = gmtime ((time_t *)&epochTime); 
+   
+   int add=checkSummerTime(ptm->tm_year+1900, ptm->tm_mon+1, ptm->tm_mday, timeClient.getHours());
+   
    RtcDateTime newTime = RtcDateTime(currentTime.Year(), currentTime.Month(), currentTime.Day(), 
-     timeClient.getHours(), timeClient.getMinutes(), timeClient.getSeconds()); 
+     timeClient.getHours()+add, timeClient.getMinutes(), timeClient.getSeconds()); 
    rtcObject.SetDateTime(newTime);   
 }
 
